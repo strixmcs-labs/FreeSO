@@ -20,6 +20,12 @@ namespace FSO.Common.Rendering.Framework
 
         public static Color ClearColor = new Color(0x72, 0x72, 0x72);
 
+        /// <summary>
+        /// Lets a platform launcher adjust the polled mouse state each frame, e.g. to report a click that went
+        /// down and up between two polls (trackpad taps on macOS), which Mouse.GetState() alone never shows.
+        /// </summary>
+        public static Func<MouseState, MouseState> MouseStateFilter;
+
         private int touchedFrames;
 		private int lastTouchCount;
 		private MouseState lastMouseState;
@@ -104,6 +110,7 @@ namespace FSO.Common.Rendering.Framework
                 if (hasFocus)
                 {
                     State.MouseState = Mouse.GetState();
+                    if (MouseStateFilter != null) State.MouseState = MouseStateFilter(State.MouseState);
                     State.KeyboardState = Keyboard.GetState();
                 }
                 else
