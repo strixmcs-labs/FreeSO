@@ -123,6 +123,8 @@ namespace FSO.LotView.Platform
             return tex;
         }
 
+        private static readonly bool PickDiag = Environment.GetEnvironmentVariable("SIMITONE_PICK_DIAG") == "1";
+
         public short GetObjectIDAtScreenPos(int x, int y, GraphicsDevice gd, WorldState state)
         {
             var ray = state.CameraRayAtScreenPos(new Vector2(x, y));
@@ -197,7 +199,15 @@ namespace FSO.LotView.Platform
 
             gd.DepthStencilState = oldDS;
 
-            return specialResult != 0 ? specialResult : (short)Math.Round(f * 65535f);
+            var result = specialResult != 0 ? specialResult : (short)Math.Round(f * 65535f);
+            if (PickDiag)
+            {
+                Console.WriteLine("PICK screen=(" + x + "," + y + ") worldPx=" + state.WorldSpace.WorldPx
+                    + " viewport=" + gd.Viewport.Bounds + " backbuffer=" + gd.PresentationParameters.BackBufferWidth + "x" + gd.PresentationParameters.BackBufferHeight
+                    + " objidBuffer=" + tex.Width + "x" + tex.Height + " center=" + oldCenter + " tileOff=" + tileOff
+                    + " zoom=" + state.Zoom + " -> id=" + result + (specialResult != 0 ? " (avatar ray)" : ""));
+            }
+            return result;
         }
 
         public Texture2D GetObjectThumb(ObjectComponent[] objects, Vector3[] positions, GraphicsDevice gd, WorldState state)
