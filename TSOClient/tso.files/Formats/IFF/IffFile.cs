@@ -539,7 +539,17 @@ namespace FSO.Files.Formats.IFF
                 }
                 else if(e.EntryType == PIFFEntryType.Patch)
                 {
-                    chunk.ChunkData = e.Apply(chunk.ChunkData ?? chunk.OriginalData);
+                    // A patch is a byte diff against one version of the chunk. If the installed chunk isn't the size the
+                    // patch was made against (e.g. the Legacy Collection changed it), applying it silently corrupts the
+                    // chunk, so keep the original instead.
+                    var source = chunk.ChunkData ?? chunk.OriginalData;
+                    if (source == null || source.Length != e.ExpectedSourceSize)
+                    {
+                        Console.WriteLine("Skipping patch for " + e.Type + " #" + e.ChunkID + " in " + piff.SourceIff + ": it expects "
+                            + e.ExpectedSourceSize + " bytes, the installed chunk has " + (source?.Length ?? 0) + ".");
+                        continue;
+                    }
+                    chunk.ChunkData = e.Apply(source);
                     chunk.ChunkProcessed = false;
                     if (e.ChunkLabel != "") chunk.ChunkLabel = e.ChunkLabel;
                     chunk.RuntimeInfo = ChunkRuntimeState.Patched;

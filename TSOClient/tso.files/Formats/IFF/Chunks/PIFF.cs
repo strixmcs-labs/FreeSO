@@ -136,6 +136,22 @@ namespace FSO.Files.Formats.IFF.Chunks
 
         public PIFFPatch[] Patches;
 
+        /// <summary>
+        /// Size of the chunk this patch was made against: the result size minus added bytes plus removed bytes.
+        /// </summary>
+        public long ExpectedSourceSize
+        {
+            get
+            {
+                long size = NewDataSize;
+                if (Patches != null)
+                {
+                    foreach (var p in Patches) size += (p.Mode == PIFFPatchMode.Add) ? -(long)p.Size : p.Size;
+                }
+                return size;
+            }
+        }
+
         public byte[] Apply(byte[] src)
         {
             var result = new byte[NewDataSize];
