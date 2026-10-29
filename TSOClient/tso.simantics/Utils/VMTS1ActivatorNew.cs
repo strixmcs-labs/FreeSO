@@ -79,12 +79,30 @@ namespace FSO.SimAntics.Utils
             }
 
             VMRoutine routine;
-            if (frame.RoutineID >= 8192) routine = (VMRoutine)res.SemiGlobal.GetRoutine(frame.RoutineID);
+            if (frame.RoutineID >= 8192) routine = (VMRoutine)res.SemiGlobal?.GetRoutine(frame.RoutineID);
             else if (frame.RoutineID >= 4096) routine = (VMRoutine)res.GetRoutine(frame.RoutineID);
             else routine = (VMRoutine)VM.Context.Globals.Resource.GetRoutine(frame.RoutineID);
 
             return routine;
         }
+
+        /// <summary>
+        /// True if every saved frame points at a routine and instruction that exist in the installed game data.
+        /// Saves can come from a different version of an object than the one installed (the Legacy Collection
+        /// updated some objects, such as doors, without updating saved lots); restoring those frames runs the VM
+        /// off the end of the routine.
+        /// </summary>
+        private bool StackMatchesCode(VMStackFrameMarshal[] stack)
+        {
+            foreach (var frame in stack)
+            {
+                var routine = GetRoutine(frame);
+                if (routine?.Instructions == null || frame.InstructionPointer >= routine.Instructions.Length) return false;
+            }
+            return true;
+        }
+
+        public int StaleStacksReset;
 
         private VMArchitectureMarshal ConvertArchitecture(IffFile iff, HOUS hous, int size)
         {
@@ -242,7 +260,24 @@ namespace FSO.SimAntics.Utils
                 };
             }
 
-            if (inst.PersonData != null)
+            // A stack saved by a different version of the object's code can't be resumed: start the object fresh.
+            // With an empty stack the VM runs its main entry point on the first tick, like a reset.
+            var staleStack = !StackMatchesCode(thread.Stack);
+            if (staleStack)
+            {
+                thread.Stack = new VMStackFrameMarshal[0];
+                StaleStacksReset++;
+            }
+
+            if (inst.PersonData != null && staleStack)
+            {
+                // the queue and object uses refer to the dropped stack, so the sim starts with nothing queued
+                thread.ActiveQueueBlock = -1;
+                thread.Queue = new VMQueuedActionMarshal[0];
+                thread.Interrupt = false;
+                thread.ActionUID = 0;
+            }
+            else if (inst.PersonData != null)
             {
                 // Restore interaction queue, use counts
                 var person = inst.PersonData.Value;
@@ -663,6 +698,8 @@ namespace FSO.SimAntics.Utils
 
             fsov.Entities = objects.ToArray();
             fsov.Threads = threads.ToArray();
+            if (StaleStacksReset > 0)
+                Console.WriteLine("TS1 lot load: started " + StaleStacksReset + " object(s) fresh; their saved script state doesn't match the installed objects.");
             fsov.MultitileGroups = groups.ToArray();
 
             VM.Load(fsov);

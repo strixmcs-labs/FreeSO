@@ -369,6 +369,8 @@ namespace FSO.SimAntics.Engine
 #endif
 
                 if (e is ThreadAbortException) throw e;
+                //the dialog only shows the first frame with a source line, which can be misleading in release builds
+                Console.Error.WriteLine("SimAntics exception in " + (Entity?.ToString() ?? "?") + ": " + e);
                 if (Stack.Count == 0) return;
                 var context = Stack[Stack.Count - 1];
                 bool Delete = ((Entity is VMGameObject) && (DialogCooldown > 30 * 20 - 10));
