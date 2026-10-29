@@ -284,6 +284,7 @@ namespace FSO.Content
                 ((TS1AvatarTextureProvider)AvatarTextures)?.Init();
                 ((TS1BMFProvider)AvatarMeshes)?.Init();
                 Jobs = new TS1JobProvider(TS1Global);
+                Fame = new TS1FameProvider(TS1Global);
                 Neighborhood = new TS1NeighborhoodProvider(this);
             } else
             {
@@ -423,6 +424,9 @@ namespace FSO.Content
 
         /** TS1 Job Data **/
         public TS1JobProvider Jobs;
+
+        /** TS1 Fame (Superstar) Data **/
+        public TS1FameProvider Fame;
 
         /** TS1 Neighbourhood Data **/
         public TS1NeighborhoodProvider Neighborhood;

@@ -1,4 +1,5 @@
-﻿using FSO.Files.Formats.IFF.Chunks;
+﻿using FSO.Content.TS1;
+using FSO.Files.Formats.IFF.Chunks;
 using FSO.Files.Utils;
 using FSO.LotView.Components;
 using FSO.LotView.Model;
@@ -295,11 +296,25 @@ namespace FSO.SimAntics.Primitives
                     if (fneigh == null) return VMPrimitiveExitCode.GOTO_FALSE;
                     AddToFamily(context.VM.TS1State.CurrentFamily, fneigh, context.VM);
                     return VMPrimitiveExitCode.GOTO_TRUE;
-                // 34. PromoteFameIfNeeded
+                case VMGenericTS1CallMode.PromoteFameIfNeeded: //34
+                    {
+                        var fameSim = context.StackObject as VMAvatar;
+                        if (fameSim == null) throw new VMSimanticsException("Fame call on a non-person stack object.", context);
+                        var fame = Content.Content.Get().Fame;
+                        if (fame == null || !fame.Loaded) return VMPrimitiveExitCode.GOTO_FALSE;
+                        return TryPromoteFame(fameSim, fame) ? VMPrimitiveExitCode.GOTO_TRUE : VMPrimitiveExitCode.GOTO_FALSE;
+                    }
                 case VMGenericTS1CallMode.TakeTaxiHook: //35
                     //not sure where this one is called, seems to have been added for studiotown
                     break;
-                // 36. DemoteFameIfNeeded
+                case VMGenericTS1CallMode.DemoteFameIfNeeded: //36
+                    {
+                        var fameSim = context.StackObject as VMAvatar;
+                        if (fameSim == null) throw new VMSimanticsException("Fame call on a non-person stack object.", context);
+                        var fame = Content.Content.Get().Fame;
+                        if (fame == null || !fame.Loaded) return VMPrimitiveExitCode.GOTO_FALSE;
+                        return TryDemoteFame(fameSim, fame) ? VMPrimitiveExitCode.GOTO_TRUE : VMPrimitiveExitCode.GOTO_FALSE;
+                    }
                 // 37. CancelPieMenu
                 // 38. GetTokensFromString (MM)
                 // 39. ChildToAdult (let's make this at least keep their skin colour, maybe)
@@ -391,6 +406,80 @@ namespace FSO.SimAntics.Primitives
             //if the sim is on the lot, change their runtime person data to reflect the new family id.
             var runtime = (VMAvatar)vm.Context.ObjectQueries.Avatars.FirstOrDefault(x => ((VMAvatar)x).GetPersonData(VMPersonDataVariable.NeighborId) == neigh.NeighbourID);
             runtime?.SetPersonData(VMPersonDataVariable.TS1FamilyNumber, (short)family.ChunkID);
+        }
+
+        //skills checked for each star level, in the column order of fame.iff STR# 6
+        private static readonly VMPersonDataVariable[] FameSkills = new VMPersonDataVariable[]
+        {
+            VMPersonDataVariable.CookingSkill,
+            VMPersonDataVariable.MechanicalSkill,
+            VMPersonDataVariable.CharismaSkill,
+            VMPersonDataVariable.BodySkill,
+            VMPersonDataVariable.LogicSkill,
+            VMPersonDataVariable.CreativitySkill
+        };
+
+        //daily relationship both ways needed for a friend's stars to count. the original reads this from a global
+        //that defaults to 25; it may be overwritten by tuning at load.
+        private const short FameFriendThreshold = 25;
+
+        private bool TryPromoteFame(VMAvatar sim, TS1FameProvider fame)
+        {
+            var level = sim.GetPersonData(VMPersonDataVariable.TS1FameStarPower);
+            if (level >= TS1FameProvider.MaxLevel || level < 0) return false;
+
+            for (int i = 0; i < FameSkills.Length; i++)
+            {
+                if (sim.GetPersonData(FameSkills[i]) < fame.SkillNeeded[i][level] * 100) return false;
+            }
+
+            if (GetFriendStarPower(sim) * 0.5f < fame.FriendStarsNeeded[level]) return false;
+            if (sim.GetPersonData(VMPersonDataVariable.TS1FameScore) < fame.FameScoreNeeded[level]) return false;
+
+            var newLevel = (short)(level + 1);
+            sim.SetPersonData(VMPersonDataVariable.TS1FameStarPower, newLevel);
+            if (sim.GetPersonData(VMPersonDataVariable.TS1FameStarHighWatermark) < newLevel)
+                sim.SetPersonData(VMPersonDataVariable.TS1FameStarHighWatermark, newLevel);
+            return true;
+        }
+
+        private bool TryDemoteFame(VMAvatar sim, TS1FameProvider fame)
+        {
+            var level = sim.GetPersonData(VMPersonDataVariable.TS1FameStarPower);
+            if (level <= 0 || level > TS1FameProvider.MaxLevel) return false;
+            if (sim.GetPersonData(VMPersonDataVariable.TS1FameScore) >= fame.FameScoreNeeded[level - 1]) return false;
+            sim.SetPersonData(VMPersonDataVariable.TS1FameStarPower, (short)(level - 1));
+            return true;
+        }
+
+        /// <summary>
+        /// Sum of the star power of this sim's friends outside their family.
+        /// Townies (family 0) don't count, and the friendship has to go both ways.
+        /// </summary>
+        private int GetFriendStarPower(VMAvatar sim)
+        {
+            var neighbourhood = Content.Content.Get().Neighborhood;
+            var myNID = sim.GetPersonData(VMPersonDataVariable.NeighborId);
+            var me = neighbourhood.GetNeighborByID(myNID);
+            if (me?.Relationships == null) return 0;
+            var myFamily = sim.GetPersonData(VMPersonDataVariable.TS1FamilyNumber);
+
+            var total = 0;
+            foreach (var rel in me.Relationships)
+            {
+                if (rel.Value.Count == 0 || rel.Value[0] < FameFriendThreshold) continue;
+                var friend = neighbourhood.GetNeighborByID((short)rel.Key);
+                if (friend?.PersonData == null || friend.Relationships == null) continue;
+
+                var friendFamily = friend.PersonData[(int)VMPersonDataVariable.TS1FamilyNumber];
+                if (friendFamily == 0 || friendFamily == myFamily) continue;
+
+                List<short> back;
+                if (!friend.Relationships.TryGetValue(myNID, out back) || back.Count == 0 || back[0] < FameFriendThreshold) continue;
+
+                total += friend.PersonData[(int)VMPersonDataVariable.TS1FameStarPower];
+            }
+            return total;
         }
 
         private VMAvatar GetRuntimeNeigh(VM vm, ushort neighborID)
